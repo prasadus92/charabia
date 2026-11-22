@@ -12,6 +12,8 @@ pub use self::control_char::ControlCharNormalizer;
 use self::greek::GreekNormalizer;
 #[cfg(feature = "japanese-transliteration")]
 pub use self::japanese::JapaneseNormalizer;
+#[cfg(feature = "kannada")]
+pub use self::kannada::KannadaNormalizer;
 pub use self::lowercase::LowercaseNormalizer;
 use self::nonspacing_mark::NonspacingMarkNormalizer;
 pub use self::persian::PersianNormalizer;
@@ -35,6 +37,8 @@ mod control_char;
 mod greek;
 #[cfg(feature = "japanese-transliteration")]
 mod japanese;
+#[cfg(feature = "kannada")]
+mod kannada;
 mod lowercase;
 mod nonspacing_mark;
 mod quote;
@@ -78,6 +82,8 @@ pub static LOSSY_NORMALIZERS: LazyLock<Vec<Box<dyn Normalizer>>> = LazyLock::new
         Box::new(VietnameseNormalizer),
         #[cfg(feature = "turkish")]
         Box::new(TurkishNormalizer),
+        #[cfg(feature = "kannada")]
+        Box::new(KannadaNormalizer),
     ]
 });
 

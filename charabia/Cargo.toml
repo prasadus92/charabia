@@ -42,6 +42,7 @@ default = [
     "swedish-recomposition",
     "turkish",
     "german-segmentation",
+    "kannada",
 ]
 
 # allow chinese specialized tokenization
@@ -87,6 +88,9 @@ turkish = []
 
 # allow decomposition of German composite words
 german-segmentation = []
+
+# allow kannada specialized tokenization
+kannada = []
 
 [dev-dependencies]
 criterion = "0.8"

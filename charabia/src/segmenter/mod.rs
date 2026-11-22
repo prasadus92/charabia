@@ -11,6 +11,8 @@ use either::Either;
 pub use german::GermanSegmenter;
 #[cfg(feature = "japanese")]
 pub use japanese::JapaneseSegmenter;
+#[cfg(feature = "kannada")]
+pub use kannada::KannadaSegmenter;
 #[cfg(feature = "khmer")]
 pub use khmer::KhmerSegmenter;
 #[cfg(feature = "korean")]
@@ -31,6 +33,8 @@ mod chinese;
 mod german;
 #[cfg(feature = "japanese")]
 mod japanese;
+#[cfg(feature = "kannada")]
+mod kannada;
 #[cfg(feature = "khmer")]
 mod khmer;
 #[cfg(feature = "korean")]
@@ -83,6 +87,9 @@ pub static SEGMENTERS: LazyLock<SegmenterMap> = LazyLock::new(|| {
         // german segmenter
         #[cfg(feature = "german-segmentation")]
         ((Script::Latin, Some(Language::Deu)), Box::new(GermanSegmenter) as Box<dyn Segmenter>),
+        // kannada segmenter
+        #[cfg(feature = "kannada")]
+        ((Script::Kannada, None), Box::new(KannadaSegmenter) as Box<dyn Segmenter>),
     ]
     .into_iter()
     .collect()
@@ -202,6 +209,7 @@ impl<'o> Iterator for SegmentedStrIter<'o, '_, '_> {
                     self.aho_iter = Some(AhoSegmentedStrIter::new(
                         text,
                         self.aho.unwrap_or(&DEFAULT_SEPARATOR_AHO),
+                        self.segmenter.word_internal_separators(),
                     ));
 
                     self.next()
@@ -215,11 +223,26 @@ struct AhoSegmentedStrIter<'o, 'aho> {
     aho_iter: FindIter<'aho, 'o>,
     prev: Either<usize, aho_corasick::Match>,
     text: &'o str,
+    word_internal_separators: &'static [&'static str],
 }
 
 impl<'o, 'aho> AhoSegmentedStrIter<'o, 'aho> {
-    fn new(text: &'o str, aho: &'aho AhoCorasick) -> Self {
-        Self { aho_iter: aho.find_iter(text), prev: Either::Left(0), text }
+    fn new(
+        text: &'o str,
+        aho: &'aho AhoCorasick,
+        word_internal_separators: &'static [&'static str],
+    ) -> Self {
+        Self {
+            aho_iter: aho.find_iter(text),
+            prev: Either::Left(0),
+            text,
+            word_internal_separators,
+        }
+    }
+
+    fn next_separator(&mut self) -> Option<aho_corasick::Match> {
+        let (text, word_internal_separators) = (self.text, self.word_internal_separators);
+        self.aho_iter.find(|m| !word_internal_separators.contains(&&text[m.range()]))
     }
 }
 
@@ -229,7 +252,7 @@ impl<'o> Iterator for AhoSegmentedStrIter<'o, '_> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut match_type = MatchType::Interleave;
         let (start, end) = match self.prev {
-            Either::Left(left) => match self.aho_iter.next() {
+            Either::Left(left) => match self.next_separator() {
                 Some(m) => {
                     let range = (left, m.start());
                     self.prev = Either::Right(m);
@@ -313,11 +336,23 @@ pub struct SegmenterOption<'tb> {
 pub trait Segmenter: Sync + Send {
     /// Segments the provided text creating an Iterator over `&str`.
     fn segment_str<'o>(&self, s: &'o str) -> Box<dyn Iterator<Item = &'o str> + 'o>;
+
+    /// Returns the separators that must not split a word of the segmenter's script.
+    ///
+    /// The text is split on separators before being given to [`Segmenter::segment_str`],
+    /// so a separator returned here stays inside the text given to the segmenter.
+    fn word_internal_separators(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 impl Segmenter for Box<dyn Segmenter> {
     fn segment_str<'o>(&self, s: &'o str) -> Box<dyn Iterator<Item = &'o str> + 'o> {
         (**self).segment_str(s)
+    }
+
+    fn word_internal_separators(&self) -> &'static [&'static str] {
+        (**self).word_internal_separators()
     }
 }
 
@@ -426,7 +461,7 @@ mod test {
             #[test]
             fn segmenter_segment_str() {
 
-                let segmented_text: Vec<_> = AhoSegmentedStrIter::new($text, &DEFAULT_SEPARATOR_AHO).flat_map(|m| match m {
+                let segmented_text: Vec<_> = AhoSegmentedStrIter::new($text, &DEFAULT_SEPARATOR_AHO, $segmenter.word_internal_separators()).flat_map(|m| match m {
                     (text, MatchType::Match) => Box::new(Some(text).into_iter()),
                     (text, MatchType::Interleave) => $segmenter.segment_str(text),
                 }).collect();
@@ -481,7 +516,7 @@ Make sure that normalized text is valid or change the trigger condition of the n
             #[test]
             fn segmenter_segment_number() {
 
-                let segmented_text: Vec<_> = AhoSegmentedStrIter::new(TEXT_NUMBER, &NUMBER_SEPARATOR_AHO).flat_map(|m| match m {
+                let segmented_text: Vec<_> = AhoSegmentedStrIter::new(TEXT_NUMBER, &NUMBER_SEPARATOR_AHO, $segmenter.word_internal_separators()).flat_map(|m| match m {
                     (text, MatchType::Match) => Box::new(Some(text).into_iter()),
                     (text, MatchType::Interleave) => $segmenter.segment_str(text),
                 }).collect();
