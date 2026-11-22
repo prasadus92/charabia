@@ -19,7 +19,8 @@ const DIGIT_ZERO: char = '\u{0CE6}';
 /// - turns the Kannada digit zero `೦`, typed after a letter or a sign for the anusvara `ಂ`,
 ///   into the anusvara when no digit follows it (ಬೆ೦ಗಳೂರು becomes ಬೆಂಗಳೂರು, ಕೊಠಡಿ೦೧ stays),
 /// - turns a nasal consonant with a virama before a consonant of the nasal's own group
-///   into the anusvara (ಸಮ್ಬನ್ಧ becomes ಸಂಬಂಧ), and keeps other clusters (ಕನ್ನಡ stays).
+///   into the anusvara (ಸಮ್ಬನ್ಧ becomes ಸಂಬಂಧ), and keeps other clusters (ಕನ್ನಡ stays),
+/// - keeps a repeated anusvara once (ಕಂಞ್ಚ becomes ಕಂಚ).
 ///
 /// The rules work on text decomposed by the [`CompatibilityDecompositionNormalizer`](super::CompatibilityDecompositionNormalizer).
 pub struct KannadaNormalizer;
@@ -111,6 +112,12 @@ fn fold(chars: &[char]) -> (String, Vec<u8>) {
             c => c,
         };
 
+        // a repeated anusvara, as in ಕಂಞ್ಚ once its nasal is folded, is kept once.
+        if c == ANUSVARA && lemma.ends_with(ANUSVARA) {
+            i += 1;
+            continue;
+        }
+
         lemma.push(c);
         output_lens[index] += c.len_utf8() as u8;
         i += 1;
@@ -126,6 +133,7 @@ fn needs_folding(lemma: &str) -> bool {
             '\u{0CBC}' | '\u{0CDE}' | '\u{0CB1}' | '\u{0CDD}' | '\u{0CF3}' | '\u{0CDC}'
             | DIGIT_ZERO => true,
             VIRAMA => previous.is_some_and(is_nasal),
+            ANUSVARA => previous == Some(ANUSVARA),
             c => is_invisible(c),
         };
         previous = Some(c);
@@ -287,6 +295,13 @@ mod test {
     }
 
     #[test]
+    fn repeated_anusvara_is_kept_once() {
+        assert_eq!(normalize("ಕಂಞ್ಚ"), "ಕಂಚ");
+        assert_eq!(normalize("ಕಂಂ"), "ಕಂ");
+        assert_eq!(normalize("ಕ೦ಂ"), "ಕಂ");
+    }
+
+    #[test]
     fn other_clusters_with_a_nasal_stay() {
         let options = NormalizerOption { lossy: true, ..Default::default() };
         for word in ["ಕನ್ನಡ", "ಅಮ್ಮ", "ಅಣ್ಣ", "ಜನ್ಮ", "ಬ್ರಹ್ಮ", "ತಾಮ್ರ", "ಅನ್ಯ", "ನ್ಕ", "ಮನ್"]
@@ -317,6 +332,7 @@ mod test {
         assert_char_map("ಅವೝತ", "ಅವಂತ", &[(3, 3), (3, 3), (3, 3), (3, 3)]);
         assert_char_map("\u{0CDC}", "ಶ್ರ\u{0CBF}\u{0CD5}", &[(3, 15)]);
         assert_char_map("ಬೆ೦ಗ", "ಬೆಂಗ", &[(3, 3), (3, 3), (3, 3), (3, 3)]);
+        assert_char_map("ಕಂಞ್ಚ", "ಕಂಚ", &[(3, 3), (3, 3), (3, 0), (3, 0), (3, 3)]);
         // the anusvara takes the place of the virama, so a highlight of ಸಂ covers ಸನ್.
         assert_char_map(
             "ಸ\u{00AD}ನ್\u{200D}ತ",
